@@ -29,12 +29,29 @@ class MyBot(telegram.Bot):
         # Generate images from a single PDF using poppler command: pdfimages -png mybook.pdf page
         object_name = f"{self._s3_prefix}page-{page_id:03d}.png"
         return self._generate_presigned_url(object_name)
+
+    def _get_signed_caption(self, caption: str):
+        if caption is None:
+            return self._caption_signature
+        else:
+            return f"{caption}\n\n{self._caption_signature}"
     
     async def send_page(self, page_id: int, caption: str = None):
-        photo = self._get_photo_url(page_id)
-        if caption:
-            caption = f"{caption}\n\n{self._caption_signature}"
-        return await self.send_photo(chat_id=self._chat_id, photo=photo, caption=caption)
+        return await self.send_photo(
+            photo=self._get_photo_url(page_id),
+            chat_id=self._chat_id,
+            caption=self._get_signed_caption(caption)
+        )
+
+    async def send_pages(self, from_page: int, to_page: int, caption: str = None):        
+        return await self.sendMediaGroup(
+            media=[
+                telegram.InputMediaPhoto(media=self._get_photo_url(page_id))
+                for page_id in range(from_page, to_page + 1)
+            ],
+            chat_id=self._chat_id,
+            caption=self._get_signed_caption(caption)
+        )
     
     def _download_pages_file(self):
         local_file = 'pages.csv'
@@ -92,15 +109,14 @@ def init(min_pages: int, max_pages: int):
 
 async def main(bot: MyBot, min_pages: int, max_pages: int):
     random_post = bot.get_random_post(min_pages=min_pages, max_pages=max_pages)
+    caption = random_post['caption']
     from_page, to_page = random_post['from_page'], random_post['to_page']
+    total_pages = to_page - from_page + 1
     async with bot:
-        for counter, page_id in enumerate(range(from_page, to_page + 1)):
-            total_pages = to_page - from_page + 1
-            caption = str(random_post['caption'])
-            if total_pages > 1:
-                caption = f"{caption} ({counter + 1}/{total_pages})"
-            await bot.send_page(page_id=page_id, caption=caption)
-
+        if total_pages == 1:
+            await bot.send_page(page_id=from_page, caption=caption)
+        else:
+            await bot.send_pages(from_page=from_page, to_page=to_page, caption=caption)
 
 if __name__ == '__main__':
     init()
