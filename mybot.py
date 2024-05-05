@@ -5,7 +5,7 @@ from csv import DictReader
 import telegram
 import dotenv
 import boto3
-
+import click
 
 class MyBot(telegram.Bot):
     def __init__(self, token: str, chat_id: str, s3_bucket: str, s3_prefix: str = ""):
@@ -50,6 +50,7 @@ class MyBot(telegram.Bot):
                     'caption': row['caption'],
                     'from_page': int(row['from']),
                     'to_page': int(row['to'] or row['from']),
+                    'total_pages': int(row['to'] or row['from']) - int(row['from']) + 1,
                 }
                 for row in csv_reader
             ]
@@ -57,17 +58,32 @@ class MyBot(telegram.Bot):
     def get_random_post(self, min_pages: int = 1, max_pages: int = 20):
         csv_file = self._download_pages_file()
         posts = self._read_pages_file(csv_file)
+        posts = [
+            post for post in posts
+            if post['total_pages'] >= min_pages and post['total_pages'] <= max_pages
+        ]
+        if len(posts) == 0:
+            raise Exception("No posts found")
         return random.choice(posts)
-    
-async def main():
+
+@click.command()
+@click.option('--min_pages', help='Minimum number of pages per post to send', default=1)
+@click.option('--max_pages', help='Maximum number of pages per post to send', default=20)
+def init(min_pages: int, max_pages: int):
+    if min_pages < 1:
+        raise ValueError("min_pages should be greater than 0")
+    if max_pages < min_pages:
+        raise ValueError("max_pages should be greater than or equal to min_pages")
     dotenv.load_dotenv()
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     s3_bucket = os.environ.get("AWS_S3_BUCKET_NAME")
     s3_prefix = os.environ.get("AWS_S3_PREFIX")
     bot = MyBot(token=token, chat_id=chat_id, s3_bucket=s3_bucket, s3_prefix=s3_prefix)
+    asyncio.run(main(bot=bot, min_pages=min_pages, max_pages=max_pages))
 
-    random_post = bot.get_random_post()
+async def main(bot: MyBot, min_pages: int, max_pages: int):
+    random_post = bot.get_random_post(min_pages=min_pages, max_pages=max_pages)
     from_page, to_page = random_post['from_page'], random_post['to_page']
     async with bot:
         for counter, page_id in enumerate(range(from_page, to_page + 1)):
@@ -79,4 +95,4 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    init()
