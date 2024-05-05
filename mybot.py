@@ -1,6 +1,7 @@
 import os
 import asyncio
 import random
+from csv import DictReader
 import telegram
 import dotenv
 import boto3
@@ -30,9 +31,33 @@ class MyBot(telegram.Bot):
         photo = self._get_photo_url(page_id)
         return await self.send_photo(chat_id=self._chat_id, photo=photo, caption=caption)
     
-    def get_pages(self, post_id: int):
-        # TODO read csv to get from page and to page, csv url should be in env
-        return (post_id, post_id)
+    def _download_pages_file(self):
+        local_file = 'pages.csv'
+        self._s3_client.download_file(
+            self._s3_bucket,
+            f"{self._s3_prefix}pages.csv",
+            local_file
+        )
+        return local_file
+
+    def _read_pages_file(self, file_path):
+        with open(file_path, 'rb') as file_path:
+            csv_data = file_path.readlines()
+            csv_data = [line.decode('utf-8-sig') for line in csv_data] # utf-8-sig removes BOM
+            csv_reader = DictReader(csv_data)
+            return [
+                {
+                    'caption': row['caption'],
+                    'from_page': int(row['from']),
+                    'to_page': int(row['to'] or row['from']),
+                }
+                for row in csv_reader
+            ]
+
+    def get_random_post(self, min_pages: int = 1, max_pages: int = 20):
+        csv_file = self._download_pages_file()
+        posts = self._read_pages_file(csv_file)
+        return random.choice(posts)
     
 async def main():
     dotenv.load_dotenv()
@@ -42,12 +67,12 @@ async def main():
     s3_prefix = os.environ.get("AWS_S3_PREFIX")
     bot = MyBot(token=token, chat_id=chat_id, s3_bucket=s3_bucket, s3_prefix=s3_prefix)
 
-    random_post_id = random.randint(1, 197) # TODO get from env
-    from_page, to_page = bot.get_pages(post_id=random_post_id)
+    random_post = bot.get_random_post()
+    from_page, to_page = random_post['from_page'], random_post['to_page']
     async with bot:
         for counter, page_id in enumerate(range(from_page, to_page + 1)):
             total_pages = to_page - from_page + 1
-            caption = str(random_post_id)
+            caption = str(random_post['caption'])
             if total_pages > 1:
                 caption = f"{caption} ({counter + 1}/{total_pages})"
             await bot.send_page(page_id=page_id, caption=caption)
