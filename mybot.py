@@ -8,12 +8,15 @@ import boto3
 import click
 
 class MyBot(telegram.Bot):
-    def __init__(self, token: str, chat_id: str, s3_bucket: str, s3_prefix: str = ""):
+    def __init__(
+            self, token: str, chat_id: str, s3_bucket: str, s3_prefix: str = "",
+            caption_signature: str = ""):
         super().__init__(token=token)
         self._chat_id = chat_id
         self._s3_bucket = s3_bucket
         self._s3_prefix = s3_prefix
         self._s3_client = boto3.client('s3')
+        self._caption_signature = caption_signature
     
     def _generate_presigned_url(self, object_name, expiration=60):
         return self._s3_client.generate_presigned_url(
@@ -29,6 +32,8 @@ class MyBot(telegram.Bot):
     
     async def send_page(self, page_id: int, caption: str = None):
         photo = self._get_photo_url(page_id)
+        if caption:
+            caption = f"{caption}\n\n{self._caption_signature}"
         return await self.send_photo(chat_id=self._chat_id, photo=photo, caption=caption)
     
     def _download_pages_file(self):
@@ -79,7 +84,10 @@ def init(min_pages: int, max_pages: int):
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     s3_bucket = os.environ.get("AWS_S3_BUCKET_NAME")
     s3_prefix = os.environ.get("AWS_S3_PREFIX")
-    bot = MyBot(token=token, chat_id=chat_id, s3_bucket=s3_bucket, s3_prefix=s3_prefix)
+    caption_signature = os.environ.get("CAPTION_SIGNATURE")
+    bot = MyBot(
+        token=token, chat_id=chat_id, s3_bucket=s3_bucket, s3_prefix=s3_prefix,
+        caption_signature=caption_signature)
     asyncio.run(main(bot=bot, min_pages=min_pages, max_pages=max_pages))
 
 async def main(bot: MyBot, min_pages: int, max_pages: int):
