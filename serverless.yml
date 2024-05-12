@@ -1,0 +1,57 @@
+service: mytelegrambots
+
+frameworkVersion: '3'
+
+params:
+  default:
+    s3_bucket: ${self:service}-${sls:stage}-data
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: us-east-1
+  deploymentMethod: direct
+  environment:
+    AWS_S3_BUCKET_NAME: ${param:s3_bucket}
+  iam:
+    role:
+      statements:
+        # Allow functions to read objects from the bucket
+        - Effect: Allow
+          Action:
+            - 's3:GetObject'
+          Resource:
+            - 'arn:aws:s3:::${param:s3_bucket}/*'
+
+functions:
+  cronHandler:
+    handler: mybot.lambda_run
+    events:
+      - schedule:
+          # everyday at 1pm UTC except Friday
+          rate: cron(0 13 ? * SUN-THU,SAT *)
+          enabled: true
+          input:
+            max_pages: 1
+      - schedule:
+          # Fridays at 1pm UTC
+          rate: cron(0 13 ? * FRI *)
+          enabled: true
+          input:
+            min_pages: 2
+
+# Install nodejs 19 then run: npm install
+plugins:
+  - serverless-python-requirements
+  - serverless-dotenv-plugin
+
+resources:
+  Resources:
+    DataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${param:s3_bucket}
+        AccessControl: Private
+  Outputs:
+    DataBucketArn:
+      Value: ${param:s3_bucket}

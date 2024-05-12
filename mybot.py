@@ -54,7 +54,7 @@ class MyBot(telegram.Bot):
         )
     
     def _download_pages_file(self):
-        local_file = 'pages.csv'
+        local_file = '/tmp/pages.csv'
         self._s3_client.download_file(
             self._s3_bucket,
             f"{self._s3_prefix}pages.csv",
@@ -88,10 +88,7 @@ class MyBot(telegram.Bot):
             raise Exception("No posts found")
         return random.choice(posts)
 
-@click.command()
-@click.option('--min_pages', help='Minimum number of pages per post to send', default=1)
-@click.option('--max_pages', help='Maximum number of pages per post to send', default=20)
-def init(min_pages: int, max_pages: int):
+def run(min_pages: int, max_pages: int):
     if min_pages < 1:
         raise ValueError("min_pages should be greater than 0")
     if max_pages < min_pages:
@@ -105,9 +102,9 @@ def init(min_pages: int, max_pages: int):
     bot = MyBot(
         token=token, chat_id=chat_id, s3_bucket=s3_bucket, s3_prefix=s3_prefix,
         caption_signature=caption_signature)
-    asyncio.run(main(bot=bot, min_pages=min_pages, max_pages=max_pages))
+    asyncio.run(bot_run(bot=bot, min_pages=min_pages, max_pages=max_pages))
 
-async def main(bot: MyBot, min_pages: int, max_pages: int):
+async def bot_run(bot: MyBot, min_pages: int, max_pages: int):
     random_post = bot.get_random_post(min_pages=min_pages, max_pages=max_pages)
     caption = random_post['caption']
     from_page, to_page = random_post['from_page'], random_post['to_page']
@@ -118,5 +115,16 @@ async def main(bot: MyBot, min_pages: int, max_pages: int):
         else:
             await bot.send_pages(from_page=from_page, to_page=to_page, caption=caption)
 
+def lambda_run(event, _):
+    min_pages = int(event.get('min_pages', 1))
+    max_pages = int(event.get('max_pages', 20))
+    run(min_pages=min_pages, max_pages=max_pages)
+
+@click.command()
+@click.option('--min_pages', help='Minimum number of pages per post to send', default=1)
+@click.option('--max_pages', help='Maximum number of pages per post to send', default=20)
+def cli_run(min_pages: int, max_pages: int):
+    run(min_pages=min_pages, max_pages=max_pages)
+
 if __name__ == '__main__':
-    init()
+    cli_run()

@@ -1,3 +1,5 @@
 .venv
 .env
 pages.csv
+node_modules
+.serverless
